@@ -1,0 +1,66 @@
+# NOTE: run: docker network create traefik_default
+
+version: "3"
+
+services:
+
+  db:
+    image: mariadb:latest
+    container_name: db
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:unconfined
+    volumes:
+      - ./db_data:/var/lib/mysql
+    networks:
+      - traefik_default
+      #- default  #should be only this one but sometimes doesn't connect to db.. or it crashes
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: $MYSQL_ROOT_PASSWORD
+      MYSQL_DATABASE: $MYSQL_DATABASE
+      MYSQL_USER: $MYSQL_USER
+      MYSQL_PASSWORD: $MYSQL_PASSWORD
+      MARIADB_AUTO_UPGRADE: "1"
+      MARIADB_INITDB_SKIP_TZINFO: "1"
+
+  # adminer:
+  #   image: adminer:latest
+  #   container_name: adminer
+  #   networks:
+  #     - traefik_default
+  #     # - default
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   ports:
+  #     - 8080:8080
+
+  wp:
+    image: wordpress:6-apache #fpm doesn't work
+    container_name: wp
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./wp_data:/var/www/html
+      # here also is the memory limit!!!
+      - ./uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
+    networks:
+      - traefik_default
+      # - default
+    restart: unless-stopped
+    environment:
+      WORDPRESS_DB_HOST: db:$MYSQL_PORT
+      WORDPRESS_DB_USER: $WORDPRESS_DB_USER
+      WORDPRESS_DB_PASSWORD: $WORDPRESS_DB_PASSWORD
+      WORDPRESS_DB_NAME: $WORDPRESS_DB_NAME
+      WORDPRESS_DB_CHARSET: $WORDPRESS_DB_CHARSET
+      # WORDPRESS_DEBUG: 1
+      #WORDPRESS_TABLE_PREFIX: $WORDPRESS_TABLE_PREFIX
+    ports:
+      - 80:80
+
+networks:
+  traefik_default:
+    external: true
+
+
