@@ -1,7 +1,7 @@
-#! /bin/sh
+#! /bin/bash
 
 set -eu
-set -o pipefail
+# set -o pipefail
 
 source ./env.sh
 

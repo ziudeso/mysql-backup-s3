@@ -1,7 +1,7 @@
-#! /bin/sh
+#! /bin/bash
 
 set -u # `-e` omitted intentionally, but i can't remember why exactly :'(
-set -o pipefail
+# set -o pipefail
 
 source ./env.sh
 

@@ -1,53 +1,111 @@
+version: "3"
 # this file is here to facilitate development/testing
 # $ docker compose up -d --build --force-recreate
 
 services:
-  mysql:
-    image: mysql:8
-    command: ["mysqld", "--mysql-native-password=ON"]
-    environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
-      MYSQL_DATABASE: test
-      MYSQL_ROOT_HOST: '%'
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ppassword"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
-  backup:
+  wp:
+    image: wordpress:6-apache #fpm doesn't work
+    container_name: wp
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./wp_data:/var/www/html
+      # here also is the memory limit!!!
+      - ./uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
+    networks:
+      - traefik_default
+    restart: unless-stopped
+    environment:
+      WORDPRESS_DB_HOST: wp-db:$MYSQL_PORT
+      WORDPRESS_DB_USER: $WORDPRESS_DB_USER
+      WORDPRESS_DB_PASSWORD: $WORDPRESS_DB_PASSWORD
+      WORDPRESS_DB_NAME: $WORDPRESS_DB_NAME
+      WORDPRESS_DB_CHARSET: $WORDPRESS_DB_CHARSET
+      WORDPRESS_DEBUG: 1
+      #WORDPRESS_TABLE_PREFIX: $WORDPRESS_TABLE_PREFIX
+    ports:
+      - 80:80
+
+  wp-db:
+    image: mariadb:11
+    container_name: wp-db
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:unconfined
+    volumes:
+      - ./db_data:/var/lib/mysql
+    networks:
+      - traefik_default
+    restart: unless-stopped
+    # ports:
+    #   - $MYSQL_PORT:$MYSQL_PORT
+    environment:
+      MYSQL_ROOT_PASSWORD: $MYSQL_ROOT_PASSWORD
+      MYSQL_DATABASE: $MYSQL_DATABASE
+      MYSQL_USER: $MYSQL_USER
+      MYSQL_PASSWORD: $MYSQL_PASSWORD
+      MARIADB_AUTO_UPGRADE: "1"
+      MARIADB_INITDB_SKIP_TZINFO: "1"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mysql-backup:
+    container_name: mysql-backup
     build:
       context: .
       args:
-        ALPINE_VERSION: '3.16'
+        MARIADB_VERSION: '11' #NOTE: must match mariadb version above
+        TARGETARCH: "linux/arm64"
     environment:
-      - SCHEDULE=@weekly
-      - BACKUP_KEEP_DAYS=7
-      - PASSPHRASE=${PASSPHRASE}
-      # AWS credentials
-      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
-      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
-      - S3_REGION=${S3_REGION}
-      # S3 configuration
-      - S3_BUCKET=${S3_BUCKET}
-      - S3_PREFIX=${S3_PREFIX}
-      # MySQL configuration
-      - MYSQL_HOST=mysql
-      - MYSQL_DATABASE=test
-      - MYSQL_USER=backup_user
-      - MYSQL_PASSWORD=password
-      - MYSQL_PORT=3306
-      - MYSQLDUMP_EXTRA_OPTS="--protocol=TCP --skip-opt --add-drop-database --add-drop-table"
+      MYSQL_HOST: wp-db
+      MYSQL_DATABASE: $WORDPRESS_DB_NAME
+      MYSQL_USER: $MYSQL_USER
+      MYSQL_PASSWORD: $MYSQL_PASSWORD
+      MYSQL_PORT: 3306
+      MYSQLDUMP_EXTRA_OPTS: "--protocol=TCP --skip-opt --add-drop-database --add-drop-table"
+      # SCHEDULE: '@every 12h'
+      SCHEDULE: '@every 1m'
+      BACKUP_KEEP_DAYS: 60
+      PASSPHRASE: $MYSQL_PASSWORD
+      S3_REGION: $S3_REGION
+      S3_ACCESS_KEY_ID: $S3_ACCESS_KEY
+      S3_SECRET_ACCESS_KEY: $S3_SECRET_KEY
+      S3_BUCKET: $S3_BUCKET_NAME
+      S3_PREFIX: $BACKUP_PREFIX
     depends_on:
-      mysql:
+      wp-db:
         condition: service_healthy
+    networks:
+      - traefik_default
 
-volumes:
-  mysql_data:
+# volumes:
+#   mysql_data:
+
+networks:
+  traefik_default:
+    external: true
+
+
+# # - SCHEDULE=@weekly
+# - SCHEDULE="@every 1m"
+# - BACKUP_KEEP_DAYS=7
+# - PASSPHRASE=${PASSPHRASE}
+# # AWS credentials
+# - S3_ACCESS_KEY_ID=$S3_ACCESS_KEY_ID
+# - S3_SECRET_ACCESS_KEY=$S3_SECRET_ACCESS_KEY
+# - S3_REGION=$S3_REGION
+# # S3 configuration
+# - S3_BUCKET=$S3_BUCKET
+# - S3_PREFIX=$S3_PREFIX
+# # MySQL configuration
+# - MYSQL_HOST=wp-db
+# - MYSQL_DATABASE=$WORDPRESS_DB_NAME
+# - MYSQL_USER=$MYSQL_USER
+# - MYSQL_PASSWORD=$MYSQL_PASSWORD
+# - MYSQL_PORT=3306
+# - MYSQLDUMP_EXTRA_OPTS="--protocol=TCP --skip-opt --add-drop-database --add-drop-table"

@@ -1,4 +1,4 @@
-#! /bin/sh
+#! /bin/bash
 
 # Verifica le variabili d'ambiente necessarie
 if [ -z "$S3_BUCKET" ]; then
