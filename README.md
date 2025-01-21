@@ -2,6 +2,65 @@
 Questo progetto fornisce immagini Docker per eseguire backup periodici di un database MySQL su AWS S3 e per ripristinare i backup quando necessario.
 
 # Utilizzo
+## Configurazione
+Crea un file `.env` con le tue configurazioni:
+
+```env
+# AWS S3 Configuration
+S3_ACCESS_KEY=your_access_key
+S3_SECRET_KEY=your_secret_key
+S3_BUCKET_NAME=your-bucket-name
+S3_REGION=eu-central-1
+
+# MySQL Configuration
+MYSQL_ROOT_PASSWORD=your_root_password
+MYSQL_USER=root
+MYSQL_PASSWORD=your_password
+MYSQL_DATABASE=admin
+MYSQL_PORT=3306
+MYSQL_HOST=wp-db
+
+# Backup Configuration
+DATABASES_TO_BACKUP=admin,altro_db  # Lista dei database da backuppare
+
+PASSPHRASE=your_encryption_password
+```
+
+## Docker Compose
+```yaml
+services:
+  mysql-backup:
+    build:
+      context: .
+      args:
+        MARIADB_VERSION: '11'
+    environment:
+      - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${S3_SECRET_KEY}
+      - AWS_DEFAULT_REGION=${S3_REGION}
+      - AWS_REGION=${S3_REGION}
+      - S3_BUCKET=${S3_BUCKET_NAME}
+      # MySQL Configuration
+      - MYSQL_HOST=${MYSQL_HOST}
+      - DATABASES_TO_BACKUP=${DATABASES_TO_BACKUP}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_PORT=${MYSQL_PORT}
+      - SCHEDULE=${SCHEDULE}
+      - BACKUP_KEEP_DAYS=${BACKUP_KEEP_DAYS}
+      - PASSPHRASE=${PASSPHRASE}
+```
+
+- La variabile `DATABASES_TO_BACKUP` nel file `.env` specifica quali database backuppare
+- Ogni database avrà la sua directory dedicata su S3: `backup/<nome_database>/`
+- Il backup può essere schedulato usando la variabile `SCHEDULE`. Esempi:
+  - `@every 30m`: ogni 30 minuti
+  - `@hourly`: ogni ora
+  - `@daily`: ogni giorno
+  - `@weekly`: ogni settimana
+- Se viene fornito `PASSPHRASE`, il backup sarà crittografato usando GPG
+- `BACKUP_KEEP_DAYS` determina per quanti giorni mantenere i backup su S3
+
 ## Backup
 ```yaml
 services:
@@ -43,16 +102,27 @@ services:
 
 ### ... dall'ultimo backup
 ```sh
-docker exec <nome container> sh restore.sh
+docker exec <nome container> sh restore.sh <nome_database>
 ```
-
-> [!NOTA]
-> Se il tuo bucket ha più di 1000 file, l'ultimo potrebbe non essere ripristinato -- viene utilizzato un solo comando S3 `ls`
+Per esempio:
+```sh
+docker exec mysql-backup sh restore.sh admin
+```
 
 ### ... da un backup specifico
 ```sh
-docker exec <nome container> sh restore.sh <timestamp>
+docker exec <nome container> sh restore.sh <nome_database> <timestamp>
 ```
+Per esempio:
+```sh
+docker exec mysql-backup sh restore.sh admin 20250121_151906
+```
+
+> [!NOTA]
+> - Il nome del database è obbligatorio e determina da quale cartella di backup ripristinare
+> - Il timestamp è opzionale. Se non specificato, verrà utilizzato l'ultimo backup disponibile
+> - I backup sono organizzati in cartelle per database: backup/<nome_database>/
+> - Prima di procedere con il ripristino, verrà mostrato un riepilogo e richiesta una conferma
 
 # Sviluppo
 ## Costruire l'immagine localmente

@@ -6,26 +6,36 @@ set -x
 # Carica la configurazione dell'ambiente
 . /env.sh
 
-# Modifica per permettere il recupero automatico dell'ultimo backup se non viene specificato un timestamp
-if [ $# -eq 1 ]; then
-    TIMESTAMP="$1"
-    BACKUP_NAME="admin_${TIMESTAMP}.sql.gz.gpg"
-    echo "Utilizzo il backup con timestamp: $TIMESTAMP"
-    BACKUP_FILE="backup/videostream/${BACKUP_NAME}"
+# Verifica che sia stato fornito almeno il nome del database
+if [ $# -lt 1 ]; then
+    echo "Utilizzo: $0 <nome_database> [timestamp]"
+    echo "Esempio: $0 admin 20250121_144944"
+    echo "Se non viene specificato il timestamp, verrà utilizzato l'ultimo backup disponibile"
+    exit 1
+fi
+
+DB_NAME="$1"
+TIMESTAMP="$2"
+
+# Se è specificato il timestamp, usa quello, altrimenti cerca l'ultimo backup
+if [ -n "$TIMESTAMP" ]; then
+    BACKUP_NAME="${DB_NAME}_${TIMESTAMP}.sql.gz.gpg"
+    echo "Utilizzo il backup specifico: $BACKUP_NAME"
+    BACKUP_FILE="backup/${DB_NAME}/${BACKUP_NAME}"
 else
-    echo "Ricerca dell'ultimo backup disponibile..."
+    echo "Ricerca dell'ultimo backup disponibile per ${DB_NAME}..."
     BACKUP_NAME=$(
-        aws s3 ls "s3://${S3_BUCKET}/backup/videostream/" \
+        aws s3 ls "s3://${S3_BUCKET}/backup/${DB_NAME}/" \
         | sort \
         | tail -n 1 \
-        | awk '{ print $4 }'
+        | awk '{print $4}'
     )
     if [ -z "$BACKUP_NAME" ]; then
-        echo "Nessun backup trovato in s3://${S3_BUCKET}/backup/videostream/"
+        echo "Nessun backup trovato in s3://${S3_BUCKET}/backup/${DB_NAME}/"
         exit 1
     fi
     echo "Trovato backup più recente: $BACKUP_NAME"
-    BACKUP_FILE="backup/videostream/${BACKUP_NAME}"
+    BACKUP_FILE="backup/${DB_NAME}/${BACKUP_NAME}"
 fi
 
 echo "Cercando backup: s3://${S3_BUCKET}/${BACKUP_FILE}"
@@ -58,7 +68,7 @@ head -n 50 "${TEMP_FILE}.sql"
 echo "Verifica presenza di dati importanti:"
 grep "INSERT INTO \`wp_posts\`" "${TEMP_FILE}.sql"
 
-read -p "Vuoi procedere con il ripristino? (s/n) " -n 1 -r
+read -p "Vuoi procedere con il ripristino del database ${DB_NAME}? (s/n) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Ss]$ ]]; then
     echo "Ripristino annullato"
@@ -66,7 +76,7 @@ if [[ ! $REPLY =~ ^[Ss]$ ]]; then
     exit 1
 fi
 
-echo "Ripristino database..."
+echo "Ripristino database ${DB_NAME}..."
 echo "Prima svuoto completamente il database..."
 
 # Drop e ricrea il database
@@ -74,13 +84,13 @@ mysql --host=$MYSQL_HOST \
     --port=$MYSQL_PORT \
     --user=$MYSQL_USER \
     --password=$MYSQL_PASSWORD \
-    -e "DROP DATABASE $MYSQL_DATABASE;"
+    -e "DROP DATABASE ${DB_NAME};"
 
 mysql --host=$MYSQL_HOST \
     --port=$MYSQL_PORT \
     --user=$MYSQL_USER \
     --password=$MYSQL_PASSWORD \
-    -e "CREATE DATABASE $MYSQL_DATABASE;"
+    -e "CREATE DATABASE ${DB_NAME};"
 
 if [ -n "$PASSPHRASE" ]; then
     # Decrittazione e ripristino
@@ -91,7 +101,7 @@ if [ -n "$PASSPHRASE" ]; then
         --port=$MYSQL_PORT \
         --user=$MYSQL_USER \
         --password=$MYSQL_PASSWORD \
-        $MYSQL_DATABASE
+        $DB_NAME
 
     MYSQL_EXIT_CODE=$?
 else
@@ -102,7 +112,7 @@ else
         --user=$MYSQL_USER \
         --password=$MYSQL_PASSWORD \
         --default-character-set=utf8mb4 \
-        $MYSQL_DATABASE
+        $DB_NAME
 
     MYSQL_EXIT_CODE=$?
 fi
@@ -116,7 +126,7 @@ if [ $MYSQL_EXIT_CODE -eq 0 ]; then
         --port=$MYSQL_PORT \
         --user=$MYSQL_USER \
         --password=$MYSQL_PASSWORD \
-        $MYSQL_DATABASE -e "SELECT ID, post_title, post_type, post_status, post_date 
+        $DB_NAME -e "SELECT ID, post_title, post_type, post_status, post_date 
                            FROM wp_posts 
                            WHERE post_type IN ('page', 'post') 
                            AND post_status = 'publish' 
