@@ -1,13 +1,16 @@
-#! /bin/bash
+#!/bin/bash
 
-set -eu
-
-if [ "$S3_S3V4" = "yes" ]; then
-  aws configure set default.s3.signature_version s3v4
-fi
-
+# Verifica se è stato impostato uno schedule
 if [ -z "$SCHEDULE" ]; then
-  /bin/bash backup.sh
-else
-  exec go-cron "$SCHEDULE" /bin/bash backup.sh
+    echo "Nessuno schedule impostato. Eseguo un backup singolo."
+    /bin/bash backup.sh
+    exit 0
 fi
+
+# Esegui il primo backup immediatamente
+echo "Esecuzione backup iniziale..."
+/bin/bash backup.sh
+
+# Avvia il cron per i backup successivi
+echo "new cron: $SCHEDULE"
+exec go-cron "$SCHEDULE" /bin/bash backup.sh

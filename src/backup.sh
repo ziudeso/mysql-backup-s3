@@ -1,73 +1,47 @@
-#! /bin/bash
+#!/bin/bash
 
-set -eu
-# set -o pipefail
+# Carica la configurazione dell'ambiente
+source /env.sh
 
-source ./env.sh
+# Imposta il nome del file di backup
+NOW=$(date +"%Y%m%d_%H%M%S")
+BACKUP_NAME="${MYSQL_DATABASE}_${NOW}.sql.gz"
+BACKUP_PATH="/tmp/${BACKUP_NAME}"
 
-echo "Creating backup of $MYSQL_DATABASE database..."
-mysqldump \
-    -h $MYSQL_HOST \
-    -P $MYSQL_PORT \
-    -u $MYSQL_USER \
+# Esegui il backup
+echo "Creazione backup MySQL..."
+mysqldump --host=$MYSQL_HOST \
+    --port=$MYSQL_PORT \
+    --user=$MYSQL_USER \
     --password=$MYSQL_PASSWORD \
-    $MYSQLDUMP_EXTRA_OPTS \
-    $MYSQL_DATABASE \
-    > db.dump
+    $MYSQL_DATABASE 2>/dev/null | gzip > $BACKUP_PATH
 
-# Encrypt backup
-echo "Encrypting backup..."
-gpg --symmetric --batch --yes --passphrase "$PASSPHRASE" db.dump
-
-# Debug AWS configuration
-echo "Verifica configurazione AWS..."
-aws configure list
-
-# Test della connessione S3
-echo "Test connessione S3..."
-aws s3 ls "s3://$S3_BUCKET" || {
-    echo "Errore nella connessione a S3. Verifica credenziali e permessi."
-    exit 1
-}
-
-# Upload to S3 with specific flags
-echo "Uploading backup to S3..."
-timestamp=$(date +%Y%m%d_%H%M%S)
-backup_file="$timestamp.sql.gpg"
-
-aws s3 cp db.dump.gpg "s3://$S3_BUCKET/$S3_PREFIX/$backup_file" \
-    --region $S3_REGION \
-    --only-show-errors
-
-if [ $? -eq 0 ]; then
-    echo "Upload completato con successo: $backup_file"
-    # Verifica che il file sia stato caricato
-    aws s3 ls "s3://$S3_BUCKET/$S3_PREFIX/$backup_file"
-else
-    echo "Errore durante l'upload"
+# Verifica se il backup è stato creato
+if [ ! -f "$BACKUP_PATH" ]; then
+    echo "Errore nella creazione del backup"
     exit 1
 fi
 
-# Test di verifica dopo l'upload
-echo "Verifica dei backup esistenti..."
-aws s3 ls "s3://$S3_BUCKET/$S3_PREFIX/" --recursive
+# Carica su S3
+echo "Caricamento su S3..."
+aws s3 cp "$BACKUP_PATH" "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_NAME}"
 
-# Cleanup
-rm db.dump db.dump.gpg
-
-echo "Backup complete!"
-
+# Pulisci i backup vecchi
 if [ -n "$BACKUP_KEEP_DAYS" ]; then
-  sec=$((86400*BACKUP_KEEP_DAYS))
-  date_from_remove=$(date -d "@$(($(date +%s) - sec))" +%Y-%m-%d)
-  backups_query="Contents[?LastModified<='${date_from_remove} 00:00:00'].{Key: Key}"
-
-  echo "Removing old backups from $S3_BUCKET..."
-  aws s3api list-objects \
-    --bucket "${S3_BUCKET}" \
-    --prefix "${S3_PREFIX}" \
-    --query "${backups_query}" \
-    --output text \
-    | xargs -n1 -t -I 'KEY' aws s3 rm s3://"${S3_BUCKET}"/'KEY'
-  echo "Removal complete."
+    echo "Rimozione backup più vecchi di $BACKUP_KEEP_DAYS giorni..."
+    OLDER_THAN=$(date -d "-${BACKUP_KEEP_DAYS} days" +%Y-%m-%d)
+    aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" | while read -r line; do
+        if [[ $line =~ ([0-9]{8}_[0-9]{6}) ]]; then
+            FILE_DATE="${BASH_REMATCH[1]}"
+            if [[ "$FILE_DATE" < "$OLDER_THAN" ]]; then
+                FILE_NAME=$(echo "$line" | awk '{print $4}')
+                aws s3 rm "s3://${S3_BUCKET}/${S3_PREFIX}/${FILE_NAME}"
+            fi
+        fi
+    done
 fi
+
+# Rimuovi il file locale
+rm -f "$BACKUP_PATH"
+
+echo "Backup completato con successo"
