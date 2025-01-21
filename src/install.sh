@@ -5,8 +5,9 @@ set -o pipefail
 
 apk update
 
-# install pg_dump
-apk add postgresql-client
+# install mysql-client from the community repository
+echo "http://dl-cdn.alpinelinux.org/alpine/v3.16/community" >> /etc/apk/repositories
+apk add mysql-client
 
 # install gpg
 apk add gnupg
@@ -21,7 +22,6 @@ rm go-cron_0.0.5_linux_${TARGETARCH}.tar.gz
 mv go-cron /usr/local/bin/go-cron
 chmod u+x /usr/local/bin/go-cron
 apk del curl
-
 
 # cleanup
 rm -rf /var/cache/apk/*

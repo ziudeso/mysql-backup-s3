@@ -1,2 +1,8 @@
 .idea
 .env
+
+test.txt
+db_data
+wp_data
+
+docker-compose-wp-test.yml

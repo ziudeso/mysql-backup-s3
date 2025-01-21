@@ -5,35 +5,57 @@ set -o pipefail
 
 source ./env.sh
 
-echo "Creating backup of $POSTGRES_DATABASE database..."
-pg_dump --format=custom \
-        -h $POSTGRES_HOST \
-        -p $POSTGRES_PORT \
-        -U $POSTGRES_USER \
-        -d $POSTGRES_DATABASE \
-        $PGDUMP_EXTRA_OPTS \
-        > db.dump
+echo "Creating backup of $MYSQL_DATABASE database..."
+mysqldump \
+    -h $MYSQL_HOST \
+    -P $MYSQL_PORT \
+    -u $MYSQL_USER \
+    --password=$MYSQL_PASSWORD \
+    $MYSQLDUMP_EXTRA_OPTS \
+    $MYSQL_DATABASE \
+    > db.dump
 
-timestamp=$(date +"%Y-%m-%dT%H:%M:%S")
-s3_uri_base="s3://${S3_BUCKET}/${S3_PREFIX}/${POSTGRES_DATABASE}_${timestamp}.dump"
+# Encrypt backup
+echo "Encrypting backup..."
+gpg --symmetric --batch --yes --passphrase "$PASSPHRASE" db.dump
 
-if [ -n "$PASSPHRASE" ]; then
-  echo "Encrypting backup..."
-  rm -f db.dump.gpg
-  gpg --symmetric --batch --passphrase "$PASSPHRASE" db.dump
-  rm db.dump
-  local_file="db.dump.gpg"
-  s3_uri="${s3_uri_base}.gpg"
+# Debug AWS configuration
+echo "Verifica configurazione AWS..."
+aws configure list
+
+# Test della connessione S3
+echo "Test connessione S3..."
+aws s3 ls "s3://$S3_BUCKET" || {
+    echo "Errore nella connessione a S3. Verifica credenziali e permessi."
+    exit 1
+}
+
+# Upload to S3 with specific flags
+echo "Uploading backup to S3..."
+timestamp=$(date +%Y%m%d_%H%M%S)
+backup_file="$timestamp.sql.gpg"
+
+aws s3 cp db.dump.gpg "s3://$S3_BUCKET/$S3_PREFIX/$backup_file" \
+    --region $S3_REGION \
+    --only-show-errors
+
+if [ $? -eq 0 ]; then
+    echo "Upload completato con successo: $backup_file"
+    # Verifica che il file sia stato caricato
+    aws s3 ls "s3://$S3_BUCKET/$S3_PREFIX/$backup_file"
 else
-  local_file="db.dump"
-  s3_uri="$s3_uri_base"
+    echo "Errore durante l'upload"
+    exit 1
 fi
 
-echo "Uploading backup to $S3_BUCKET..."
-aws $aws_args s3 cp "$local_file" "$s3_uri"
-rm "$local_file"
+# Test di verifica dopo l'upload
+echo "Verifica dei backup esistenti..."
+aws s3 ls "s3://$S3_BUCKET/$S3_PREFIX/" --recursive
 
-echo "Backup complete."
+# Cleanup
+rm db.dump db.dump.gpg
+
+echo "Backup complete!"
 
 if [ -n "$BACKUP_KEEP_DAYS" ]; then
   sec=$((86400*BACKUP_KEEP_DAYS))
@@ -41,11 +63,11 @@ if [ -n "$BACKUP_KEEP_DAYS" ]; then
   backups_query="Contents[?LastModified<='${date_from_remove} 00:00:00'].{Key: Key}"
 
   echo "Removing old backups from $S3_BUCKET..."
-  aws $aws_args s3api list-objects \
+  aws s3api list-objects \
     --bucket "${S3_BUCKET}" \
     --prefix "${S3_PREFIX}" \
     --query "${backups_query}" \
     --output text \
-    | xargs -n1 -t -I 'KEY' aws $aws_args s3 rm s3://"${S3_BUCKET}"/'KEY'
+    | xargs -n1 -t -I 'KEY' aws s3 rm s3://"${S3_BUCKET}"/'KEY'
   echo "Removal complete."
 fi

@@ -1,87 +1,86 @@
-# Introduction
-This project provides Docker images to periodically back up a PostgreSQL database to AWS S3, and to restore from the backup as needed.
+# Introduzione
+Questo progetto fornisce immagini Docker per eseguire backup periodici di un database MySQL su AWS S3 e per ripristinare i backup quando necessario.
 
-# Usage
+# Utilizzo
 ## Backup
 ```yaml
 services:
-  postgres:
-    image: postgres:16
+  mysql:
+    image: mysql:8
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: test
 
   backup:
-    image: eeshugerman/postgres-backup-s3:16
+    image: eeshugerman/mysql-backup-s3:8
     environment:
-      SCHEDULE: '@weekly'     # optional
-      BACKUP_KEEP_DAYS: 7     # optional
-      PASSPHRASE: passphrase  # optional
+      SCHEDULE: '@weekly'     # opzionale
+      BACKUP_KEEP_DAYS: 7     # opzionale
+      PASSPHRASE: passphrase  # opzionale
       S3_REGION: region
       S3_ACCESS_KEY_ID: key
       S3_SECRET_ACCESS_KEY: secret
       S3_BUCKET: my-bucket
       S3_PREFIX: backup
-      POSTGRES_HOST: postgres
-      POSTGRES_DATABASE: dbname
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: dbname
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
 ```
 
-- Images are tagged by the major PostgreSQL version supported: `12`, `13`, `14`, `15` or `16`.
-- The `SCHEDULE` variable determines backup frequency. See go-cron schedules documentation [here](http://godoc.org/github.com/robfig/cron#hdr-Predefined_schedules). Omit to run the backup immediately and then exit.
-- If `PASSPHRASE` is provided, the backup will be encrypted using GPG.
-- Run `docker exec <container name> sh backup.sh` to trigger a backup ad-hoc.
-- If `BACKUP_KEEP_DAYS` is set, backups older than this many days will be deleted from S3.
-- Set `S3_ENDPOINT` if you're using a non-AWS S3-compatible storage provider.
+- Le immagini sono taggate in base alla versione maggiore di MySQL supportata: `5.7` o `8`
+- La variabile `SCHEDULE` determina la frequenza dei backup. Vedi la documentazione degli schedule di go-cron [qui](http://godoc.org/github.com/robfig/cron#hdr-Predefined_schedules). Omettere per eseguire il backup immediatamente e poi uscire.
+- Se viene fornito `PASSPHRASE`, il backup sarà crittografato usando GPG.
+- Esegui `docker exec <nome container> sh backup.sh` per attivare un backup ad-hoc.
+- Se `BACKUP_KEEP_DAYS` è impostato, i backup più vecchi di questo numero di giorni verranno eliminati da S3.
+- Imposta `S3_ENDPOINT` se stai utilizzando un provider di storage compatibile con S3 non-AWS.
 
-## Restore
-> [!CAUTION]
-> DATA LOSS! All database objects will be dropped and re-created.
+## Ripristino
+> [!ATTENZIONE]
+> PERDITA DI DATI! Tutti i dati esistenti nel database verranno sovrascritti.
 
-### ... from latest backup
+### ... dall'ultimo backup
 ```sh
-docker exec <container name> sh restore.sh
+docker exec <nome container> sh restore.sh
 ```
 
-> [!NOTE]
-> If your bucket has more than a 1000 files, the latest may not be restored -- only one S3 `ls` command is used
+> [!NOTA]
+> Se il tuo bucket ha più di 1000 file, l'ultimo potrebbe non essere ripristinato -- viene utilizzato un solo comando S3 `ls`
 
-### ... from specific backup
+### ... da un backup specifico
 ```sh
-docker exec <container name> sh restore.sh <timestamp>
+docker exec <nome container> sh restore.sh <timestamp>
 ```
 
-# Development
-## Build the image locally
-`ALPINE_VERSION` determines Postgres version compatibility. See [`build-and-push-images.yml`](.github/workflows/build-and-push-images.yml) for the latest mapping.
+# Sviluppo
+## Costruire l'immagine localmente
+`ALPINE_VERSION` determina la compatibilità con la versione di MySQL. Vedi [`build-and-push-images.yml`](.github/workflows/build-and-push-images.yml) per il mapping più recente.
 ```sh
 DOCKER_BUILDKIT=1 docker build --build-arg ALPINE_VERSION=3.14 .
 ```
-## Run a simple test environment with Docker Compose
+## Eseguire un ambiente di test semplice con Docker Compose
 ```sh
 cp template.env .env
-# fill out your secrets/params in .env
+# compila i tuoi segreti/parametri in .env
 docker compose up -d
 ```
 
-# Acknowledgements
-This project is a fork and re-structuring of @schickling's [postgres-backup-s3](https://github.com/schickling/dockerfiles/tree/master/postgres-backup-s3) and [postgres-restore-s3](https://github.com/schickling/dockerfiles/tree/master/postgres-restore-s3).
+# Riconoscimenti
+Questo progetto è un fork e una ristrutturazione di @schickling's [postgres-backup-s3](https://github.com/schickling/dockerfiles/tree/master/postgres-backup-s3) e [postgres-restore-s3](https://github.com/schickling/dockerfiles/tree/master/postgres-restore-s3), adattato per MySQL.
 
-## Fork goals
-These changes would have been difficult or impossible merge into @schickling's repo or similarly-structured forks.
-  - dedicated repository
-  - automated builds
-  - support multiple PostgreSQL versions
-  - backup and restore with one image
+## Obiettivi del fork
+Queste modifiche sarebbero state difficili o impossibili da unire nel repository di @schickling o in fork strutturati in modo simile.
+  - repository dedicato
+  - build automatizzate
+  - supporto per multiple versioni di MySQL
+  - backup e ripristino con una sola immagine
 
-## Other changes and features
-  - some environment variables renamed or removed
-  - uses `pg_dump`'s `custom` format (see [docs](https://www.postgresql.org/docs/10/app-pgdump.html))
-  - drop and re-create all database objects on restore
-  - backup blobs and all schemas by default
-  - no Python 2 dependencies
-  - filter backups on S3 by database name
-  - support encrypted (password-protected) backups
-  - support for restoring from a specific backup by timestamp
-  - support for auto-removal of old backups
+## Altre modifiche e funzionalità
+  - alcune variabili d'ambiente rinominate o rimosse
+  - supporto per backup crittografati (protetti da password)
+  - supporto per il ripristino da un backup specifico tramite timestamp
+  - supporto per la rimozione automatica dei backup vecchi
+  - filtro dei backup su S3 per nome database
+  - nessuna dipendenza da Python 2
