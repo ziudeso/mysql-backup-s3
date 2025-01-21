@@ -74,7 +74,7 @@ services:
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - MYSQL_PORT=3306
-      - SCHEDULE=@every 5m
+      - SCHEDULE=@every 30m
       - BACKUP_KEEP_DAYS=14
       - PASSPHRASE=${MYSQL_PASSWORD}
     depends_on:
