@@ -67,14 +67,14 @@ services:
       - AWS_DEFAULT_REGION=${S3_REGION}
       - AWS_REGION=${S3_REGION}
       - S3_BUCKET=${S3_BUCKET_NAME}
-      - S3_PREFIX=${BACKUP_PREFIX}
+      - S3_PREFIX=${BACKUP_PREFIX}/${WORDPRESS_DB_NAME}
       # Variabili MySQL
       - MYSQL_HOST=wp-db
       - MYSQL_DATABASE=${WORDPRESS_DB_NAME}
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - MYSQL_PORT=3306
-      - SCHEDULE=@every 30m
+      - SCHEDULE=@every 1m
       - BACKUP_KEEP_DAYS=14
       - PASSPHRASE=${MYSQL_PASSWORD}
     depends_on:

@@ -6,128 +6,86 @@ set -x
 # Carica la configurazione dell'ambiente
 . /env.sh
 
-# Modifica per permettere il recupero automatico dell'ultimo backup se non viene specificato un timestamp
-if [ $# -eq 1 ]; then
-    TIMESTAMP="$1"
-    BACKUP_NAME="admin_${TIMESTAMP}.sql.gz.gpg"
-    echo "Utilizzo il backup con timestamp: $TIMESTAMP"
-    BACKUP_FILE="backup/videostream/${BACKUP_NAME}"
-else
-    echo "Ricerca dell'ultimo backup disponibile..."
+DB_NAME=$MYSQL_DATABASE
+TIMESTAMP=$1
+
+# Se non è stato specificato un timestamp, trova l'ultimo backup disponibile
+if [ -z "$TIMESTAMP" ]; then
+    echo "Nessun timestamp specificato, cerco l'ultimo backup disponibile..."
     BACKUP_NAME=$(
-        aws s3 ls "s3://${S3_BUCKET}/backup/videostream/" \
+        aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" \
+        | grep ".sql.gz.gpg$" \
         | sort \
         | tail -n 1 \
-        | awk '{ print $4 }'
+        | awk '{print $4}'
     )
     if [ -z "$BACKUP_NAME" ]; then
-        echo "Nessun backup trovato in s3://${S3_BUCKET}/backup/videostream/"
+        echo "Nessun backup trovato in s3://${S3_BUCKET}/${S3_PREFIX}/"
+        echo "Lista dei backup disponibili:"
+        aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/"
         exit 1
     fi
     echo "Trovato backup più recente: $BACKUP_NAME"
-    BACKUP_FILE="backup/videostream/${BACKUP_NAME}"
+    BACKUP_FILE="${S3_PREFIX}/${BACKUP_NAME}"
+else
+    # Verifica che il timestamp sia nel formato corretto
+    if ! [[ $TIMESTAMP =~ ^[0-9]{8}_[0-9]{6}$ ]]; then
+        echo "Errore: il timestamp deve essere nel formato YYYYMMDD_HHMMSS"
+        echo "Esempio: 20250121_151906"
+        echo "Lista dei backup disponibili:"
+        aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/"
+        exit 1
+    fi
+    
+    # Costruisci il nome del file di backup
+    BACKUP_FILE="${S3_PREFIX}/${DB_NAME}_${TIMESTAMP}.sql.gz.gpg"
 fi
 
-echo "Cercando backup: s3://${S3_BUCKET}/${BACKUP_FILE}"
-echo "Dimensione attesa del backup: $(aws s3 ls "s3://${S3_BUCKET}/${BACKUP_FILE}" | awk '{print $3}') bytes"
+# Verifica che il file esista su S3
+if ! aws s3 ls "s3://${S3_BUCKET}/${BACKUP_FILE}" > /dev/null 2>&1; then
+    echo "Errore: backup non trovato in s3://${S3_BUCKET}/${BACKUP_FILE}"
+    echo "Lista dei backup disponibili:"
+    aws s3 ls "s3://${S3_BUCKET}/${BACKUP_FILE}"
+    exit 1
+fi
 
+# Ottieni la dimensione del backup
+BACKUP_SIZE=$(aws s3 ls "s3://${S3_BUCKET}/${BACKUP_FILE}" | awk '{print $3}')
+echo "Dimensione attesa del backup: $BACKUP_SIZE bytes"
+
+# Imposta i file temporanei
 TEMP_FILE="/tmp/restore.sql.gz"
 TEMP_SQL="/tmp/restore.sql"
 
+# Download del backup da S3
 echo "Download backup da S3..."
-if ! aws s3 cp "s3://${S3_BUCKET}/${BACKUP_FILE}" "${TEMP_FILE}"; then
+if ! aws s3 cp "s3://${S3_BUCKET}/${BACKUP_FILE}" "$TEMP_FILE"; then
     echo "Errore nel download del backup"
     exit 1
 fi
 
-echo "Dimensione del backup scaricato:"
-ls -lh "${TEMP_FILE}"
-
-echo "Test decrittazione e decompressione..."
-if ! gpg --batch --yes --passphrase "$PASSPHRASE" -d "${TEMP_FILE}" 2>/dev/null | gunzip > "${TEMP_FILE}.sql"; then
-    echo "Errore nella decrittazione/decompressione"
-    exit 1
-fi
-
-echo "Dimensione del file SQL:"
-ls -lh "${TEMP_FILE}.sql"
-
-echo "Contenuto del backup (prime 50 righe):"
-head -n 50 "${TEMP_FILE}.sql"
-
-echo "Verifica presenza di dati importanti:"
-grep "INSERT INTO \`wp_posts\`" "${TEMP_FILE}.sql"
-
-read -p "Vuoi procedere con il ripristino? (s/n) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Ss]$ ]]; then
-    echo "Ripristino annullato"
-    rm -f "${TEMP_FILE}" "${TEMP_FILE}.sql"
-    exit 1
-fi
-
-echo "Ripristino database..."
-echo "Prima svuoto completamente il database..."
-
-# Drop e ricrea il database
-mysql --host=$MYSQL_HOST \
-    --port=$MYSQL_PORT \
-    --user=$MYSQL_USER \
-    --password=$MYSQL_PASSWORD \
-    -e "DROP DATABASE $MYSQL_DATABASE;"
-
-mysql --host=$MYSQL_HOST \
-    --port=$MYSQL_PORT \
-    --user=$MYSQL_USER \
-    --password=$MYSQL_PASSWORD \
-    -e "CREATE DATABASE $MYSQL_DATABASE;"
-
+# Decripta e decomprimi
 if [ -n "$PASSPHRASE" ]; then
-    # Decrittazione e ripristino
-    echo "Decrittazione e decompressione..."
-    gpg --batch --yes --passphrase "$PASSPHRASE" -d "${TEMP_FILE}" 2>/dev/null | \
-    gunzip | \
-    mysql --host=$MYSQL_HOST \
-        --port=$MYSQL_PORT \
-        --user=$MYSQL_USER \
-        --password=$MYSQL_PASSWORD \
-        $MYSQL_DATABASE
-
-    MYSQL_EXIT_CODE=$?
-else
-    # Solo decompressione e ripristino
-    gunzip < "${TEMP_FILE}" | \
-    mysql --host=$MYSQL_HOST \
-        --port=$MYSQL_PORT \
-        --user=$MYSQL_USER \
-        --password=$MYSQL_PASSWORD \
-        --default-character-set=utf8mb4 \
-        $MYSQL_DATABASE
-
-    MYSQL_EXIT_CODE=$?
+    echo "Decriptazione backup..."
+    gpg --batch --yes --passphrase "$PASSPHRASE" -d "$TEMP_FILE" > "${TEMP_FILE}.dec"
+    mv "${TEMP_FILE}.dec" "$TEMP_FILE"
 fi
 
-# Verifica il risultato
-if [ $MYSQL_EXIT_CODE -eq 0 ]; then
-    echo "Ripristino completato con successo"
-    echo "Verifica contenuto del database:"
-    echo "Contenuto della tabella wp_posts (solo contenuti pubblicati):"
-    mysql --host=$MYSQL_HOST \
-        --port=$MYSQL_PORT \
-        --user=$MYSQL_USER \
-        --password=$MYSQL_PASSWORD \
-        $MYSQL_DATABASE -e "SELECT ID, post_title, post_type, post_status, post_date 
-                           FROM wp_posts 
-                           WHERE post_type IN ('page', 'post') 
-                           AND post_status = 'publish' 
-                           ORDER BY post_date DESC;"
-else
-    echo "Errore durante il ripristino (codice: $MYSQL_EXIT_CODE)"
-    exit 1
-fi
+echo "Decompressione backup..."
+gunzip -f "$TEMP_FILE"
 
-# Pulizia
-rm -f "${TEMP_FILE}" "${TEMP_FILE}.sql"
+# Ripristina il database
+echo "Ripristino database..."
+mysql --host="$MYSQL_HOST" \
+      --port="$MYSQL_PORT" \
+      --user="$MYSQL_USER" \
+      --password="$MYSQL_PASSWORD" \
+      "$DB_NAME" < "$TEMP_SQL"
+
+# Pulisci i file temporanei
+rm -f "$TEMP_FILE" "$TEMP_SQL"
+
+echo "Ripristino completato con successo"
 
 # Disabilita il debug
 set +x
