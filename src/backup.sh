@@ -110,7 +110,11 @@ fi
 
 # Carica su S3
 echo "Caricamento su S3..."
-S3_PATH="${S3_PREFIX}/${DB_NAME}/${BACKUP_NAME}$([ -n "$PASSPHRASE" ] && echo ".sql.gz.gpg" || echo ".sql.gz")"
+# Costruisci il path S3 in modo più controllato
+FILENAME="${BACKUP_NAME}$([ -n "$PASSPHRASE" ] && echo ".sql.gz.gpg" || echo ".sql.gz")"
+# Rimuovi gli slash in eccesso e assicurati che non ci siano slash dopo il prefisso
+S3_PATH="${S3_PREFIX}/${FILENAME}"
+
 aws s3 cp "$FINAL_BACKUP" "s3://${S3_BUCKET}/${S3_PATH}"
 
 # Pulizia backup vecchi in modo silenzioso
