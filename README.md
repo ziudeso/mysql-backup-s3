@@ -43,7 +43,7 @@ services:
 
 ### ... dall'ultimo backup
 ```sh
-docker exec <nome container> sh restore.sh
+docker exec <nome container> bash restore.sh
 ```
 
 > [!NOTA]
@@ -51,7 +51,7 @@ docker exec <nome container> sh restore.sh
 
 ### ... da un backup specifico
 ```sh
-docker exec <nome container> sh restore.sh <timestamp>
+docker exec <nome container> bash restore.sh <timestamp>
 ```
 
 # Sviluppo
