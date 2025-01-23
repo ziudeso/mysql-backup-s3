@@ -6,7 +6,7 @@ set -eux
 # Update package list
 apt-get update
 
-# Install MySQL client
+# Install MySQL client (not needed as we are using mariadb image)
 apt-get install -y mysql-client
 
 # Install GPG
