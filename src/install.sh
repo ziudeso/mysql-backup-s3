@@ -15,14 +15,20 @@ apt-get install -y mysql-client
 # Install GPG
 apt-get install -y gnupg
 
-# Install AWS CLI v2
-curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+# Install AWS CLI v2 based on architecture
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+else
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+fi
 unzip awscliv2.zip
 ./aws/install
 rm -rf aws awscliv2.zip
 
 # Install go-cron
-curl -L https://github.com/ivoronin/go-cron/releases/download/v0.0.5/go-cron_0.0.5_linux_$(dpkg --print-architecture).tar.gz -o go-cron.tar.gz
+ARCH=$(dpkg --print-architecture)
+curl -L "https://github.com/ivoronin/go-cron/releases/download/v0.0.5/go-cron_0.0.5_linux_${ARCH}.tar.gz" -o go-cron.tar.gz
 tar xvf go-cron.tar.gz
 rm go-cron.tar.gz
 mv go-cron /usr/local/bin/go-cron

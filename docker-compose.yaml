@@ -110,6 +110,7 @@ services:
   # Get image version: docker inspect <image_name_or_ID> | grep -E '"(Hostname|com.docker.compose.service|com.docker.compose.project.working_dir|org.opencontainers.image.title|org.opencontainers.image.version)"' -A 1
   mysql-backup-wp1:
     container_name: mysql-backup-wp1
+    image: ziudeso/mysql-backup:latest
     build:
       context: .
       # args:
