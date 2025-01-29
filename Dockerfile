@@ -7,7 +7,7 @@
 # docker push ziudeso/mysql-backup-s3:11
 # ARG MARIADB_VERSION=11
 # FROM mariadb:${MARIADB_VERSION}
-FROM ubuntu:22
+FROM ubuntu:22.04
 
 ADD src/install.sh install.sh
 RUN sh install.sh && rm install.sh

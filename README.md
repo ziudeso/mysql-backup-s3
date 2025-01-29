@@ -1,86 +1,111 @@
-# Introduzione
-Questo progetto fornisce immagini Docker per eseguire backup periodici di un database MySQL su AWS S3 e per ripristinare i backup quando necessario.
+# MySQL Backup to S3
+Docker images for automated MySQL database backups to AWS S3 with restore capabilities.
 
-# Utilizzo
-## Backup
+## Features
+- Supports MariaDB 10 and 11
+- Automated periodic backups to S3
+- GPG encryption support
+- Backup rotation with automatic cleanup
+- Restore from specific timestamps
+- WordPress-ready configuration
+
+## Quick Start
 ```yaml
 services:
-  mysql:
-    image: mysql:8
+  mysql-backup:
+    build: .
     environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
-      MYSQL_DATABASE: test
-
-  backup:
-    image: eeshugerman/mysql-backup-s3:8
-    environment:
-      SCHEDULE: '@weekly'     # opzionale
-      BACKUP_KEEP_DAYS: 7     # opzionale
-      PASSPHRASE: passphrase  # opzionale
-      S3_REGION: region
-      S3_ACCESS_KEY_ID: key
-      S3_SECRET_ACCESS_KEY: secret
-      S3_BUCKET: my-bucket
-      S3_PREFIX: backup
-      MYSQL_HOST: mysql
-      MYSQL_DATABASE: dbname
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
+      # AWS Configuration
+      - AWS_ACCESS_KEY_ID=your_key
+      - AWS_SECRET_ACCESS_KEY=your_secret
+      - AWS_DEFAULT_REGION=eu-central-1
+      - S3_BUCKET=your-bucket
+      - S3_PREFIX=backup/database_name
+      
+      # MySQL Configuration
+      - MYSQL_HOST=db-host
+      - MYSQL_DATABASE=dbname
+      - MYSQL_USER=user
+      - MYSQL_PASSWORD=password
+      - MYSQL_PORT=3306
+      
+      # Backup Settings
+      - SCHEDULE=@every 1h
+      - BACKUP_KEEP_DAYS=14
+      - PASSPHRASE=your_encryption_key
 ```
 
-- Le immagini sono taggate in base alla versione maggiore di MySQL supportata: `5.7` o `8`
-- La variabile `SCHEDULE` determina la frequenza dei backup. Vedi la documentazione degli schedule di go-cron [qui](http://godoc.org/github.com/robfig/cron#hdr-Predefined_schedules). Omettere per eseguire il backup immediatamente e poi uscire.
-- Se viene fornito `PASSPHRASE`, il backup sarà crittografato usando GPG.
-- Esegui `docker exec <nome container> sh backup.sh` per attivare un backup ad-hoc.
-- Se `BACKUP_KEEP_DAYS` è impostato, i backup più vecchi di questo numero di giorni verranno eliminati da S3.
-- Imposta `S3_ENDPOINT` se stai utilizzando un provider di storage compatibile con S3 non-AWS.
+## Environment Variables
 
-## Ripristino
-> [!ATTENZIONE]
-> PERDITA DI DATI! Tutti i dati esistenti nel database verranno sovrascritti.
+### Required Variables
+- `AWS_ACCESS_KEY_ID`: AWS access key
+- `AWS_SECRET_ACCESS_KEY`: AWS secret key
+- `S3_BUCKET`: S3 bucket name
+- `MYSQL_HOST`: Database host
+- `MYSQL_DATABASE`: Database name
+- `MYSQL_USER`: Database user
+- `MYSQL_PASSWORD`: Database password
 
-### ... dall'ultimo backup
-```sh
-docker exec <nome container> bash restore.sh
+### Optional Variables
+- `AWS_DEFAULT_REGION`: AWS region (default: eu-central-1)
+- `S3_PREFIX`: Prefix for S3 backup path
+- `MYSQL_PORT`: Database port (default: 3306)
+- `SCHEDULE`: Backup frequency using go-cron syntax
+- `BACKUP_KEEP_DAYS`: Number of days to keep backups
+- `PASSPHRASE`: Encryption key for GPG
+
+## Backup Schedule Examples
+- `@every 1h`: Every hour
+- `@every 30m`: Every 30 minutes
+- `@daily`: Once a day at midnight
+- `@weekly`: Once a week
+- Leave empty for single backup
+
+## Manual Operations
+
+### Trigger Manual Backup
+```bash
+docker exec <container_name> bash backup.sh
 ```
 
-> [!NOTA]
-> Se il tuo bucket ha più di 1000 file, l'ultimo potrebbe non essere ripristinato -- viene utilizzato un solo comando S3 `ls`
-
-### ... da un backup specifico
-```sh
-docker exec <nome container> bash restore.sh <timestamp>
+### Restore Latest Backup
+```bash
+docker exec <container_name> bash restore.sh
 ```
 
-# Sviluppo
-## Costruire l'immagine localmente
-`ALPINE_VERSION` determina la compatibilità con la versione di MySQL. Vedi [`build-and-push-images.yml`](.github/workflows/build-and-push-images.yml) per il mapping più recente.
-```sh
-DOCKER_BUILDKIT=1 docker build --build-arg ALPINE_VERSION=3.14 .
+### Restore Specific Backup
+```bash
+docker exec <container_name> bash restore.sh YYYYMMDD_HHMMSS
 ```
-## Eseguire un ambiente di test semplice con Docker Compose
-```sh
-cp template.env .env
-# compila i tuoi segreti/parametri in .env
+
+## Development
+
+### Build Image
+```bash
+docker compose build --no-cache
+```
+
+### Test Environment
+```bash
+# Copy and edit environment variables
+cp .env.example .env
+
+# Start services
 docker compose up -d
 ```
 
-# Riconoscimenti
-Questo progetto è un fork e una ristrutturazione di @schickling's [postgres-backup-s3](https://github.com/schickling/dockerfiles/tree/master/postgres-backup-s3) e [postgres-restore-s3](https://github.com/schickling/dockerfiles/tree/master/postgres-restore-s3), adattato per MySQL.
+## Security Notes
+- Always use encryption for sensitive data
+- Store credentials securely
+- Use IAM roles with minimal required permissions
+- Regularly rotate backup encryption keys
 
-## Obiettivi del fork
-Queste modifiche sarebbero state difficili o impossibili da unire nel repository di @schickling o in fork strutturati in modo simile.
-  - repository dedicato
-  - build automatizzate
-  - supporto per multiple versioni di MySQL
-  - backup e ripristino con una sola immagine
+## Limitations
+- S3 listing is limited to 1000 files
+- Restore operation overwrites existing database
 
-## Altre modifiche e funzionalità
-  - alcune variabili d'ambiente rinominate o rimosse
-  - supporto per backup crittografati (protetti da password)
-  - supporto per il ripristino da un backup specifico tramite timestamp
-  - supporto per la rimozione automatica dei backup vecchi
-  - filtro dei backup su S3 per nome database
-  - nessuna dipendenza da Python 2
+## License
+MIT License
+
+## Contributing
+Contributions are welcome! Please feel free to submit a Pull Request.

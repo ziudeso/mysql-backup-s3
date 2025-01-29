@@ -5,5 +5,7 @@ test.txt
 db_data
 wp_data
 wp2_data
+db_data_10
+db_data_11
 
 docker-compose-wp-test.yml

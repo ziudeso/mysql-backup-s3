@@ -17,7 +17,7 @@ services:
       - traefik_default
     restart: unless-stopped
     environment:
-      WORDPRESS_DB_HOST: wp-db
+      WORDPRESS_DB_HOST: wp-db-10
       WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
       WORDPRESS_DB_USER: ${WORDPRESS_DB_USER}
       WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
@@ -38,7 +38,7 @@ services:
       - ./uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
     restart: unless-stopped
     environment:
-      WORDPRESS_DB_HOST: wp-db
+      WORDPRESS_DB_HOST: wp-db-11
       WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME2}
       WORDPRESS_DB_USER: ${WORDPRESS_DB_USER2}
       WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD2}
@@ -50,20 +50,49 @@ services:
     networks:
       - traefik_default
 
-  wp-db:
-    image: mariadb:11
-    container_name: wp-db
+  wp-db-10:
+    image: mariadb:10
+    container_name: wp-db-10
     security_opt:
       - no-new-privileges:true
       - seccomp:unconfined
     volumes:
-      - ./db_data:/var/lib/mysql
+      - ./db_data_10:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
-    # ports:
-    #   - $MYSQL_PORT:$MYSQL_PORT
+    ports:
+      - "3307:3306" 
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: admin
+      MYSQL_DATABASE: ${WORDPRESS_DB_NAME}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MARIADB_AUTO_UPGRADE: "1"
+      MARIADB_INITDB_SKIP_TZINFO: "1"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - traefik_default
+
+  wp-db-11:
+    image: mariadb:11
+    container_name: wp-db-11
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:unconfined
+    volumes:
+      - ./db_data_11:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    ports:
+      - "3308:3306" 
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${WORDPRESS_DB_NAME2}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MARIADB_AUTO_UPGRADE: "1"
@@ -83,10 +112,10 @@ services:
     container_name: mysql-backup-wp1
     build:
       context: .
-      args:
-        MARIADB_VERSION: '11'
-        # TARGETARCH: "linux/amd64"
-        TARGETARCH: "linux/arm64"
+      # args:
+      #   MARIADB_VERSION: '11'
+      #   # TARGETARCH: "linux/amd64"
+      #   TARGETARCH: "linux/arm64"
     environment:
       - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY}
       - AWS_SECRET_ACCESS_KEY=${S3_SECRET_KEY}
@@ -95,42 +124,42 @@ services:
       - S3_BUCKET=${S3_BUCKET_NAME}
       - S3_PREFIX=${BACKUP_PREFIX}/${WORDPRESS_DB_NAME}
       # Variabili MySQL
-      - MYSQL_HOST=wp-db
+      - MYSQL_HOST=${WORDPRESS_DB_HOST}
       - MYSQL_DATABASE=${WORDPRESS_DB_NAME}
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
-      - MYSQL_PORT=3306
-      - SCHEDULE=@every 3m
-      - BACKUP_KEEP_DAYS=14
+      - MYSQL_PORT=${MYSQL_PORT}
+      - SCHEDULE=${BACKUP_SCHEDULE}
+      - BACKUP_KEEP_DAYS=${BACKUP_KEEP_DAYS}
       - PASSPHRASE=${MYSQL_PASSWORD}
     networks:
       - traefik_default
 
-  mysql-backup-wp2:
-    container_name: mysql-backup-wp2
-    build:
-      context: .
-      args:
-        MARIADB_VERSION: '11'
-        TARGETARCH: "linux/arm64"
-    environment:
-      - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY}
-      - AWS_SECRET_ACCESS_KEY=${S3_SECRET_KEY}
-      - AWS_DEFAULT_REGION=${S3_REGION}
-      - AWS_REGION=${S3_REGION}
-      - S3_BUCKET=${S3_BUCKET_NAME}
-      - S3_PREFIX=${BACKUP_PREFIX}/${WORDPRESS_DB_NAME2}
-      # Variabili MySQL
-      - MYSQL_HOST=wp-db
-      - MYSQL_DATABASE=${WORDPRESS_DB_NAME2}
-      - MYSQL_USER=${MYSQL_USER}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
-      - MYSQL_PORT=3306
-      - SCHEDULE=@every 5m
-      - BACKUP_KEEP_DAYS=14
-      - PASSPHRASE=${MYSQL_PASSWORD}
-    networks:
-      - traefik_default
+  # mysql-backup-wp2:
+  #   container_name: mysql-backup-wp2
+  #   build:
+  #     context: .
+  #     # args:
+  #     #   MARIADB_VERSION: '11'
+  #     #   TARGETARCH: "linux/arm64"
+  #   environment:
+  #     - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY}
+  #     - AWS_SECRET_ACCESS_KEY=${S3_SECRET_KEY}
+  #     - AWS_DEFAULT_REGION=${S3_REGION}
+  #     - AWS_REGION=${S3_REGION}
+  #     - S3_BUCKET=${S3_BUCKET_NAME}
+  #     - S3_PREFIX=${BACKUP_PREFIX}/${WORDPRESS_DB_NAME2}
+  #     # Variabili MySQL
+  #     - MYSQL_HOST=wp-db-11
+  #     - MYSQL_DATABASE=${WORDPRESS_DB_NAME2}
+  #     - MYSQL_USER=${MYSQL_USER}
+  #     - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+  #     - MYSQL_PORT=3306
+  #     - SCHEDULE=@every 5m
+  #     - BACKUP_KEEP_DAYS=14
+  #     - PASSPHRASE=${MYSQL_PASSWORD}
+  #   networks:
+  #     - traefik_default
 
 
 # volumes:
