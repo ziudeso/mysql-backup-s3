@@ -1,3 +1,7 @@
+# MariaDB (all versions)
+# docker buildx build --tag ziudeso/mysql-backup-s3:latest --platform linux/amd64,linux/arm64 .
+# docker push ziudeso/mysql-backup-s3:latest
+
 # MariaDB 10
 # docker buildx build --tag ziudeso/mysql-backup-s3:10 --platform linux/amd64,linux/arm64 --build-arg MARIADB_VERSION=10 .
 # docker push ziudeso/mysql-backup-s3:10

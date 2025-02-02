@@ -110,13 +110,13 @@ services:
   # Get image version: docker inspect <image_name_or_ID> | grep -E '"(Hostname|com.docker.compose.service|com.docker.compose.project.working_dir|org.opencontainers.image.title|org.opencontainers.image.version)"' -A 1
   mysql-backup-wp1:
     container_name: mysql-backup-wp1
-    image: ziudeso/mysql-backup:latest
-    build:
-      context: .
-      # args:
-      #   MARIADB_VERSION: '11'
-      #   # TARGETARCH: "linux/amd64"
-      #   TARGETARCH: "linux/arm64"
+    image: ziudeso/mysql-backup-s3:latest
+    # build:
+    #   context: .
+    #   # args:
+    #   #   MARIADB_VERSION: '11'
+    #   #   # TARGETARCH: "linux/amd64"
+    #   #   TARGETARCH: "linux/arm64"
     environment:
       - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY}
       - AWS_SECRET_ACCESS_KEY=${S3_SECRET_KEY}
